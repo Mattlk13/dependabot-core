@@ -13,6 +13,7 @@ module Dependabot
           email=
           executables=
           extra_rdoc_files=
+          date=
           homepage=
           license=
           licenses=
@@ -59,11 +60,11 @@ module Dependabot
             replace_version_assignments(node)
 
             # Replace the `s.files= ...` assignment with a blank array, as
-            # occassionally a File.open(..).readlines pattern is used
+            # occasionally a File.open(..).readlines pattern is used
             replace_file_assignments(node)
 
             # Replace the `s.require_path= ...` assignment, as
-            # occassionally a Dir['lib'] pattern is used
+            # occasionally a Dir['lib'] pattern is used
             replace_require_paths_assignments(node)
 
             # Replace any `File.read(...)` calls with a dummy string
@@ -158,7 +159,15 @@ module Dependabot
             return false unless node.children.first&.type == :lvar
             return false unless node.children[1] == :files=
 
-            node.children[2]&.type == :send
+            node_dynamically_lists_files?(node.children[2])
+          end
+
+          def node_dynamically_lists_files?(node)
+            return false unless node.is_a?(Parser::AST::Node)
+
+            return true if node.type == :send
+
+            node.type == :block && node.children.first&.type == :send
           end
 
           def node_assigns_require_paths?(node)
@@ -285,7 +294,7 @@ module Dependabot
           def replace_constant(node)
             case node.children.last&.type
             when :str, :int then nil # no-op
-            when :const, :send, :lvar, :if
+            when :float, :const, :send, :lvar, :if
               replace(
                 node.children.last.loc.expression,
                 %("#{replacement_version}")

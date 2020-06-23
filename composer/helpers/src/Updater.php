@@ -9,6 +9,9 @@ use Composer\Installer;
 
 class Updater
 {
+    /**
+     * @throws \RuntimeException
+     */
     public static function update(array $args): array
     {
         [$workingDirectory, $dependencyName, $dependencyVersion, $gitCredentials, $registryCredentials] = $args;
@@ -17,6 +20,11 @@ class Updater
         // install dependencies into the working dir, rather than a vendor folder
         // in the root of the project
         $originalDir = getcwd();
+
+        if (!is_string($originalDir)) {
+            throw new \RuntimeException('Failed determining the current working directory.');
+        }
+
         chdir($workingDirectory);
 
         $io = new ExceptionIO();

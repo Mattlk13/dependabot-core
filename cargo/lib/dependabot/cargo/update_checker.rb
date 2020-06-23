@@ -69,8 +69,12 @@ module Dependabot
           requirements: dependency.requirements,
           updated_source: updated_source,
           target_version: target_version,
-          update_strategy: requirement_update_strategy
+          update_strategy: requirements_update_strategy
         ).updated_requirements
+      end
+
+      def requirements_update_strategy
+        library? ? :bump_versions_if_necessary : :bump_versions
       end
 
       private
@@ -99,16 +103,13 @@ module Dependabot
         dependency_files.none? { |f| f.name == "Cargo.lock" }
       end
 
-      def requirement_update_strategy
-        library? ? :bump_versions_if_necessary : :bump_versions
-      end
-
       def latest_version_finder
         @latest_version_finder ||= LatestVersionFinder.new(
           dependency: dependency,
           dependency_files: dependency_files,
           credentials: credentials,
           ignored_versions: ignored_versions,
+          raise_on_ignored: raise_on_ignored,
           security_advisories: security_advisories
         )
       end

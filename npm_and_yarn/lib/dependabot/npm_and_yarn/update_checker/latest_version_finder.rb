@@ -7,8 +7,6 @@ require "dependabot/npm_and_yarn/version"
 require "dependabot/npm_and_yarn/requirement"
 require "dependabot/shared_helpers"
 require "dependabot/errors"
-
-# rubocop:disable ClassLength
 module Dependabot
   module NpmAndYarn
     class UpdateChecker
@@ -23,11 +21,13 @@ module Dependabot
         end
 
         def initialize(dependency:, credentials:, dependency_files:,
-                       ignored_versions:, security_advisories:)
+                       ignored_versions:, security_advisories:,
+                       raise_on_ignored: false)
           @dependency          = dependency
           @credentials         = credentials
           @dependency_files    = dependency_files
           @ignored_versions    = ignored_versions
+          @raise_on_ignored    = raise_on_ignored
           @security_advisories = security_advisories
         end
 
@@ -61,10 +61,11 @@ module Dependabot
           versions_array =
             if specified_dist_tag_requirement?
               [version_from_dist_tags].compact
-            else possible_versions
+            else possible_versions(filter_ignored: false)
             end
 
           secure_versions = filter_vulnerable_versions(versions_array)
+          secure_versions = filter_ignored_versions(secure_versions)
           secure_versions = filter_lower_versions(secure_versions)
           secure_versions.reverse.find { |version| !yanked?(version) }
         rescue Excon::Error::Socket, Excon::Error::Timeout
@@ -73,17 +74,27 @@ module Dependabot
           # our problem, so we quietly return `nil` here.
         end
 
-        def possible_versions_with_details
-          npm_details.fetch("versions", {}).
-            reject { |_, details| details["deprecated"] }.
-            transform_keys { |k| version_class.new(k) }.
-            reject { |k, _| k.prerelease? && !related_to_current_pre?(k) }.
-            reject { |k, _| ignore_reqs.any? { |r| r.satisfied_by?(k) } }.
-            sort_by(&:first).reverse
+        def possible_previous_versions_with_details
+          @possible_previous_versions_with_details ||= begin
+            npm_details.fetch("versions", {}).
+              transform_keys { |k| version_class.new(k) }.
+              reject { |v, _| v.prerelease? && !related_to_current_pre?(v) }.
+              sort_by(&:first).reverse
+          end
         end
 
-        def possible_versions
-          possible_versions_with_details.map(&:first)
+        def possible_versions_with_details(filter_ignored: true)
+          versions = possible_previous_versions_with_details.
+                     reject { |_, details| details["deprecated"] }
+
+          return filter_ignored_versions(versions) if filter_ignored
+
+          versions
+        end
+
+        def possible_versions(filter_ignored: true)
+          possible_versions_with_details(filter_ignored: filter_ignored).
+            map(&:first)
         end
 
         private
@@ -93,6 +104,18 @@ module Dependabot
 
         def valid_npm_details?
           !npm_details&.fetch("dist-tags", nil).nil?
+        end
+
+        def filter_ignored_versions(versions_array)
+          filtered = versions_array.reject do |v, _|
+            ignore_reqs.any? { |r| r.satisfied_by?(v) }
+          end
+
+          if @raise_on_ignored && filtered.empty? && versions_array.any?
+            raise AllVersionsIgnored
+          end
+
+          filtered
         end
 
         def filter_out_of_range_versions(versions_array)
@@ -393,6 +416,7 @@ module Dependabot
 
         # TODO: Remove need for me
         def git_dependency?
+          # ignored_version/raise_on_ignored are irrelevant.
           GitCommitChecker.new(
             dependency: dependency,
             credentials: credentials
@@ -402,4 +426,3 @@ module Dependabot
     end
   end
 end
-# rubocop:enable ClassLength

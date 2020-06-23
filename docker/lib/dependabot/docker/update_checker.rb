@@ -112,18 +112,17 @@ module Dependabot
         non_downgrade_tags = remove_version_downgrades(candidate_tags)
         candidate_tags = non_downgrade_tags if non_downgrade_tags.any?
 
-        wants_prerelease = prerelease?(dependency.version)
-        candidate_tags =
-          candidate_tags.
-          reject { |tag| prerelease?(tag) && !wants_prerelease }.
-          reject do |tag|
-            version = version_class.new(numeric_version_from(tag))
-            ignore_reqs.any? { |r| r.satisfied_by?(version) }
-          end
+        unless prerelease?(dependency.version)
+          candidate_tags =
+            candidate_tags.
+            reject { |tag| prerelease?(tag) }
+        end
 
         latest_tag =
-          candidate_tags.
-          max_by { |tag| version_class.new(numeric_version_from(tag)) }
+          filter_ignored(candidate_tags).
+          max_by do |tag|
+            [version_class.new(numeric_version_from(tag)), tag.length]
+          end
 
         latest_tag || dependency.version
       end
@@ -155,7 +154,7 @@ module Dependabot
         # which case we'll use that to find the latest version)
         return false unless tag.match?(/(^|\-)[0-9a-f]{7,}$/)
 
-        !tag.match?(/(^|\-)20[0-1]\d{5}$/)
+        !tag.match?(/(^|\-)\d+$/)
       end
 
       def version_of_latest_tag
@@ -259,6 +258,7 @@ module Dependabot
 
         return :year_month if version.match?(/^[12]\d{3}(?:[.\-]|$)/)
         return :year_month_day if version.match?(/^[12]\d{5}(?:[.\-]|$)/)
+        return :build_num if version.match?(/^\d+$/)
 
         :normal
       end
@@ -280,7 +280,7 @@ module Dependabot
       def numeric_version_from(tag)
         return unless tag.match?(NAME_WITH_VERSION)
 
-        tag.match(NAME_WITH_VERSION).named_captures.fetch("version")
+        tag.match(NAME_WITH_VERSION).named_captures.fetch("version").downcase
       end
 
       def registry_hostname
@@ -314,6 +314,20 @@ module Dependabot
             user: registry_credentials&.fetch("username", nil),
             password: registry_credentials&.fetch("password", nil)
           )
+      end
+
+      def filter_ignored(candidate_tags)
+        filtered =
+          candidate_tags.
+          reject do |tag|
+            version = version_class.new(numeric_version_from(tag))
+            ignore_reqs.any? { |r| r.satisfied_by?(version) }
+          end
+        if @raise_on_ignored && filtered.empty? && candidate_tags.any?
+          raise AllVersionsIgnored
+        end
+
+        filtered
       end
 
       def ignore_reqs

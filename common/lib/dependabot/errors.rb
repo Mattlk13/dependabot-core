@@ -25,7 +25,7 @@ module Dependabot
   class OutOfMemory < DependabotError; end
 
   #####################
-  # Repo leval errors #
+  # Repo level errors #
   #####################
 
   class BranchNotFound < DependabotError
@@ -98,7 +98,7 @@ module Dependabot
     attr_reader :source
 
     def initialize(source)
-      @source = source
+      @source = source.gsub(%r{(?<=\.fury\.io)/[A-Za-z0-9]{20}(?=/)}, "")
       msg = "The following source could not be reached as it requires "\
             "authentication (and any provided details were invalid or lacked "\
             "the required permissions): #{source}"
@@ -110,7 +110,7 @@ module Dependabot
     attr_reader :source
 
     def initialize(source)
-      @source = source
+      @source = source.gsub(%r{(?<=\.fury\.io)/[A-Za-z0-9]{20}(?=/)}, "")
       super("The following source timed out: #{source}")
     end
   end
@@ -119,7 +119,7 @@ module Dependabot
     attr_reader :source
 
     def initialize(source)
-      @source = source
+      @source = source.gsub(%r{(?<=\.fury\.io)/[A-Za-z0-9]{20}(?=/)}, "")
       super("Could not verify the SSL certificate for #{source}")
     end
   end
@@ -191,4 +191,7 @@ module Dependabot
       super(msg)
     end
   end
+
+  # Raised by UpdateChecker if all candidate updates are ignored
+  class AllVersionsIgnored < DependabotError; end
 end

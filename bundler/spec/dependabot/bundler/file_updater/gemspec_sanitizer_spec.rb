@@ -184,6 +184,11 @@ RSpec.describe Dependabot::Bundler::FileUpdater::GemspecSanitizer do
         it { is_expected.to eq(%(Spec.new { |s| s.version = 1 })) }
       end
 
+      context "with an assignment to a float" do
+        let(:content) { "Spec.new { |s| s.version = 1.0 }" }
+        it { is_expected.to eq(%(Spec.new { |s| s.version = "1.5.0" })) }
+      end
+
       context "with an assignment to a File.read" do
         let(:content) { "Spec.new { |s| s.version = File.read('something') }" }
         it do
@@ -233,6 +238,13 @@ RSpec.describe Dependabot::Bundler::FileUpdater::GemspecSanitizer do
     describe "files assignment" do
       context "with an assignment to a method call (File.open)" do
         let(:content) { "Spec.new { |s| s.files = File.open('file.txt') }" }
+        it { is_expected.to eq("Spec.new { |s| s.files = [] }") }
+      end
+
+      context "with an assignment to a method call with a block (Dir.chdir)" do
+        let(:content) do
+          'Spec.new { |s| s.files = Dir.chdir("path") { `ls`.split("\n") } }'
+        end
         it { is_expected.to eq("Spec.new { |s| s.files = [] }") }
       end
 

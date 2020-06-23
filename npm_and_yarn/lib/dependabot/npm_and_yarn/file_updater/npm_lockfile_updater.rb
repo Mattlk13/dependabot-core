@@ -355,7 +355,7 @@ module Dependabot
 
         def dependencies_in_error_message?(error_message)
           names = dependencies.map { |dep| dep.name.split("/").first }
-          # Example foramt: No matching version found for
+          # Example format: No matching version found for
           # @dependabot/dummy-pkg-b@^1.3.0
           names.any? do |name|
             error_message.match?(%r{#{Regexp.quote(name)}[\/@]})
@@ -365,7 +365,9 @@ module Dependabot
         def write_temporary_dependency_files(lockfile_name,
                                              update_package_json: true)
           write_lockfiles(lockfile_name)
-          File.write(".npmrc", npmrc_content)
+
+          dir = Pathname.new(lockfile_name).dirname
+          File.write(File.join(dir, ".npmrc"), npmrc_content)
 
           package_files.each do |file|
             path = file.name
@@ -382,6 +384,7 @@ module Dependabot
             # git dependencies, otherwise npm will (unhelpfully) update them
             updated_content = lock_git_deps(updated_content)
             updated_content = replace_ssh_sources(updated_content)
+            updated_content = lock_deps_with_latest_reqs(updated_content)
 
             updated_content = sanitized_package_json_content(updated_content)
             File.write(file.name, updated_content)
@@ -440,6 +443,24 @@ module Dependabot
             end
           end
           @git_dependencies_to_lock
+        end
+
+        # When a package.json version requirement is set to `latest`, npm will
+        # always try to update these dependencies when doing an `npm install`,
+        # regardless of lockfile version. Prevent any unrelated updates by
+        # changing the version requirement to `*` while updating the lockfile.
+        def lock_deps_with_latest_reqs(content)
+          json = JSON.parse(content)
+
+          NpmAndYarn::FileParser::DEPENDENCY_TYPES.each do |type|
+            json.fetch(type, {}).each do |nm, requirement|
+              next unless requirement == "latest"
+
+              json[type][nm] = "*"
+            end
+          end
+
+          json.to_json
         end
 
         def replace_ssh_sources(content)
@@ -565,7 +586,7 @@ module Dependabot
 
         def sanitized_package_json_content(content)
           content.
-            gsub(/\{\{.*?\}\}/, "something"). # {{ name }} syntax not allowed
+            gsub(/\{\{[^\}]*?\}\}/, "something"). # {{ nm }} syntax not allowed
             gsub(/(?<!\\)\\ /, " ").          # escaped whitespace not allowed
             gsub(%r{^\s*//.*}, " ")           # comments are not allowed
         end

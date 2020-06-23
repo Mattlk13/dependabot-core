@@ -6,16 +6,30 @@ module Dependabot
   module Gradle
     class FileParser
       class PropertyValueFinder
+        # rubocop:disable Layout/LineLength
+        QUOTED_VALUE_REGEX =
+          /\s*['"][^\s]+['"]\s*/.freeze
+
+        # project.findProperty('property') ?:
+        FIND_PROPERTY_REGEX =
+          /\s*project\.findProperty\(#{QUOTED_VALUE_REGEX}\)\s*\?:/.freeze
+
+        # project.hasProperty('property') ? project.getProperty('property') :
+        HAS_PROPERTY_REGEX =
+          /\s*project\.hasProperty\(#{QUOTED_VALUE_REGEX}\)\s*\?\s*project\.getProperty\(#{QUOTED_VALUE_REGEX}\)\s*:/.freeze
+
+        PROPERTY_DECLARATION_AS_DEFAULTS_REGEX =
+          /(?:#{FIND_PROPERTY_REGEX}|#{HAS_PROPERTY_REGEX})?/.freeze
+
         SINGLE_PROPERTY_DECLARATION_REGEX =
-          /(?:^|\s+|ext.)(?<name>[^\s=]+)\s*=\s*['"](?<value>[^\s]+)['"]/.
-          freeze
+          /(?:^|\s+|ext.)(?<name>[^\s=]+)\s*=#{PROPERTY_DECLARATION_AS_DEFAULTS_REGEX}\s*['"](?<value>[^\s]+)['"]/.freeze
 
         MULTI_PROPERTY_DECLARATION_REGEX =
-          /(?:^|\s+|ext.)(?<namespace>[^\s=]+)\s*=\s*\[(?<values>[^\]]+)\]/m.
-          freeze
+          /(?:^|\s+|ext.)(?<namespace>[^\s=]+)\s*=\s*\[(?<values>[^\]]+)\]/m.freeze
 
         NAMESPACED_DECLARATION_REGEX =
-          /(?:^|\s+)(?<name>[^\s:]+)\s*:\s*['"](?<value>[^\s]+)['"]\s*/.freeze
+          /(?:^|\s+)(?<name>[^\s:]+)\s*:#{PROPERTY_DECLARATION_AS_DEFAULTS_REGEX}\s*['"](?<value>[^\s]+)['"]\s*/.freeze
+        # rubocop:enable Layout/LineLength
 
         def initialize(dependency_files:)
           @dependency_files = dependency_files
@@ -81,11 +95,14 @@ module Dependabot
             declaration_string = Regexp.last_match.to_s.strip
             captures = Regexp.last_match.named_captures
             name = captures.fetch("name").sub(/^ext\./, "")
-            properties[name] = {
-              value: captures.fetch("value"),
-              declaration_string: declaration_string,
-              file: buildfile.name
-            }
+
+            unless properties.key?(name)
+              properties[name] = {
+                value: captures.fetch("value"),
+                declaration_string: declaration_string,
+                file: buildfile.name
+              }
+            end
           end
 
           properties

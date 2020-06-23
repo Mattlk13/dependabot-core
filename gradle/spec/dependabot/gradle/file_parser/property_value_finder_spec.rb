@@ -64,6 +64,15 @@ RSpec.describe Dependabot::Gradle::FileParser::PropertyValueFinder do
             its([:declaration_string]) do
               is_expected.to eq("buildToolsVersion = '27.0.3'")
             end
+
+            context "and the property name has already been set" do
+              let(:buildfile_fixture_name) { "duplicate_property_name.gradle" }
+              let(:property_name) { "spek_version" }
+              its([:value]) { is_expected.to eq("2.0.6") }
+              its([:declaration_string]) do
+                is_expected.to eq("spek_version = '2.0.6'")
+              end
+            end
           end
 
           context "and the property is preceded by a comment" do
@@ -74,6 +83,26 @@ RSpec.describe Dependabot::Gradle::FileParser::PropertyValueFinder do
             its([:value]) { is_expected.to eq("27.1.1") }
             its([:declaration_string]) do
               is_expected.to eq("supportVersion = '27.1.1'")
+            end
+          end
+
+          context "and the property is using findProperty syntax" do
+            let(:property_name) { "findPropertyVersion" }
+            its([:value]) { is_expected.to eq("27.1.1") }
+            its([:declaration_string]) do
+              # rubocop:disable Layout/LineLength
+              is_expected.to eq("findPropertyVersion = project.findProperty('findPropertyVersion') ?: '27.1.1'")
+              # rubocop:enable Layout/LineLength
+            end
+          end
+
+          context "and the property is using hasProperty syntax" do
+            let(:property_name) { "hasPropertyVersion" }
+            its([:value]) { is_expected.to eq("27.1.1") }
+            its([:declaration_string]) do
+              # rubocop:disable Layout/LineLength
+              is_expected.to eq("hasPropertyVersion = project.hasProperty('hasPropertyVersion') ? project.getProperty('hasPropertyVersion') :'27.1.1'")
+              # rubocop:enable Layout/LineLength
             end
           end
 
@@ -89,6 +118,25 @@ RSpec.describe Dependabot::Gradle::FileParser::PropertyValueFinder do
             its([:value]) { is_expected.to eq("3.12.1") }
             its([:declaration_string]) do
               is_expected.to eq("okhttp                 : '3.12.1'")
+            end
+            context "and the property is using findProperty syntax" do
+              let(:property_name) { "versions.findPropertyVersion" }
+              its([:value]) { is_expected.to eq("1.0.0") }
+              its([:declaration_string]) do
+                # rubocop:disable Layout/LineLength
+                is_expected.to eq("findPropertyVersion    : project.findProperty('findPropertyVersion') ?: '1.0.0'")
+                # rubocop:enable Layout/LineLength
+              end
+            end
+
+            context "and the property is using hasProperty syntax" do
+              let(:property_name) { "versions.hasPropertyVersion" }
+              its([:value]) { is_expected.to eq("1.0.0") }
+              its([:declaration_string]) do
+                # rubocop:disable Layout/LineLength
+                is_expected.to eq("hasPropertyVersion     : project.hasProperty('hasPropertyVersion') ? project.getProperty('hasPropertyVersion') :'1.0.0'")
+                # rubocop:enable Layout/LineLength
+              end
             end
           end
         end

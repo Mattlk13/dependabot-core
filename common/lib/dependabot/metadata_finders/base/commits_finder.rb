@@ -35,7 +35,6 @@ module Dependabot
           "#{source.url}/#{path}"
         end
 
-        # rubocop:disable Metrics/CyclomaticComplexity
         def commits
           return [] unless source
           return [] unless new_tag && previous_tag
@@ -48,7 +47,6 @@ module Dependabot
           else raise "Unexpected source provider '#{source.provider}'"
           end
         end
-        # rubocop:enable Metrics/CyclomaticComplexity
 
         def new_tag
           new_version = dependency.version
@@ -57,7 +55,7 @@ module Dependabot
             return new_version
           end
 
-          return new_ref if git_source?(dependency.requirements) && ref_changed?
+          return new_ref if new_ref && ref_changed?
 
           tags = dependency_tags.
                  select { |tag| tag_matches_version?(tag, new_version) }.
@@ -68,7 +66,6 @@ module Dependabot
 
         private
 
-        # rubocop:disable Metrics/CyclomaticComplexity
         # rubocop:disable Metrics/PerceivedComplexity
         def previous_tag
           previous_version = dependency.previous_version
@@ -76,7 +73,7 @@ module Dependabot
           if git_source?(dependency.previous_requirements) &&
              git_sha?(previous_version)
             previous_version
-          elsif git_source?(dependency.previous_requirements) && ref_changed?
+          elsif previous_ref && ref_changed?
             previous_ref
           elsif previous_version
             tags = dependency_tags.
@@ -88,7 +85,7 @@ module Dependabot
             lowest_tag_satisfying_previous_requirements
           end
         end
-        # rubocop:enable Metrics/CyclomaticComplexity
+
         # rubocop:enable Metrics/PerceivedComplexity
 
         def lowest_tag_satisfying_previous_requirements
@@ -129,32 +126,31 @@ module Dependabot
 
           sources = requirements.map { |r| r.fetch(:source) }.uniq.compact
           return false if sources.empty?
-          raise "Multiple sources! #{sources.join(', ')}" if sources.count > 1
 
-          source_type = sources.first[:type] || sources.first.fetch("type")
-          source_type == "git"
+          sources.all? { |s| s[:type] == "git" || s["type"] == "git" }
         end
 
         def ref_changed?
-          return false unless previous_ref && new_ref
-
+          # We could go from multiple previous refs (nil) to a single new ref
           previous_ref != new_ref
         end
 
         def previous_ref
           return unless git_source?(dependency.previous_requirements)
 
-          dependency.previous_requirements.map do |r|
+          previous_refs = dependency.previous_requirements.map do |r|
             r.dig(:source, "ref") || r.dig(:source, :ref)
-          end.compact.first
+          end.compact.uniq
+          return previous_refs.first if previous_refs.count == 1
         end
 
         def new_ref
           return unless git_source?(dependency.previous_requirements)
 
-          dependency.requirements.map do |r|
+          new_refs = dependency.requirements.map do |r|
             r.dig(:source, "ref") || r.dig(:source, :ref)
-          end.compact.first
+          end.compact.uniq
+          return new_refs.first if new_refs.count == 1
         end
 
         def tag_matches_version?(tag, version)

@@ -41,7 +41,7 @@ module Dependabot
 
         def build_url_for_details(repo_details)
           response = get_repo_metadata(repo_details)
-          check_repo_reponse(response, repo_details)
+          check_repo_response(response, repo_details)
           return unless response.status == 200
 
           body = remove_wrapping_zero_width_chars(response.body)
@@ -109,7 +109,7 @@ module Dependabot
           }
         end
 
-        def check_repo_reponse(response, details)
+        def check_repo_response(response, details)
           return unless [401, 402, 403].include?(response.status)
           raise if details.fetch(:url) == DEFAULT_REPOSITORY_URL
 
@@ -161,6 +161,10 @@ module Dependabot
                     node.at_xpath("./value")&.content&.strip
               }
             end
+
+          unless doc.css("configuration > packageSources > clear").any?
+            sources << { url: DEFAULT_REPOSITORY_URL, key: nil }
+          end
 
           sources.reject! do |s|
             known_urls = credential_repositories.map { |cr| cr.fetch(:url) }

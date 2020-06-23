@@ -15,6 +15,7 @@ RSpec.describe Dependabot::Composer::UpdateChecker do
       dependency_files: files,
       credentials: credentials,
       ignored_versions: ignored_versions,
+      raise_on_ignored: raise_on_ignored,
       security_advisories: security_advisories
     )
   end
@@ -28,6 +29,7 @@ RSpec.describe Dependabot::Composer::UpdateChecker do
     )
   end
   let(:ignored_versions) { [] }
+  let(:raise_on_ignored) { false }
   let(:security_advisories) { [] }
   let(:dependency_name) { "monolog/monolog" }
   let(:dependency_version) { "1.0.1" }
@@ -85,6 +87,20 @@ RSpec.describe Dependabot::Composer::UpdateChecker do
       it { is_expected.to eq(Gem::Version.new("1.21.0")) }
     end
 
+    context "when the user is ignoring all versions" do
+      let(:ignored_versions) { [">= 0"] }
+      it "returns latest_resolvable_version" do
+        expect(subject).to eq(Gem::Version.new("1.17.0"))
+      end
+
+      context "raise_on_ignored" do
+        let(:raise_on_ignored) { true }
+        it "raises an error" do
+          expect { subject }.to raise_error(Dependabot::AllVersionsIgnored)
+        end
+      end
+    end
+
     context "when packagist returns an empty array" do
       before do
         stub_request(:get, packagist_url).
@@ -117,7 +133,7 @@ RSpec.describe Dependabot::Composer::UpdateChecker do
 
       context "that is the dependency we're checking" do
         let(:dependency_name) { "path_dep/path_dep" }
-        let(:current_version) { "1.0.1" }
+        let(:dependency_version) { "1.0.1" }
         let(:requirements) do
           [{
             requirement: "1.0.*",
@@ -129,6 +145,45 @@ RSpec.describe Dependabot::Composer::UpdateChecker do
 
         it { is_expected.to be_nil }
       end
+    end
+
+    context "with a git dependency" do
+      let(:files) { [composer_file, lockfile] }
+      let(:manifest_fixture_name) { "git_source" }
+      let(:lockfile_fixture_name) { "git_source" }
+
+      let(:dependency_version) { "5267b03b1e4861c4657ede17a88f13ef479db482" }
+      let(:requirements) do
+        [{
+          requirement: "dev-example",
+          file: "composer.json",
+          groups: ["runtime"],
+          source: {
+            type: "git",
+            url: "https://github.com/dependabot/monolog.git",
+            branch: "example",
+            ref: nil
+          }
+        }]
+      end
+
+      let(:service_pack_url) do
+        "https://github.com/dependabot/monolog.git/info/refs"\
+        "?service=git-upload-pack"
+      end
+      before do
+        stub_request(:get, service_pack_url).
+          to_return(
+            status: 200,
+            body: fixture("git", "upload_packs", upload_pack_fixture),
+            headers: {
+              "content-type" => "application/x-git-upload-pack-advertisement"
+            }
+          )
+      end
+      let(:upload_pack_fixture) { "monolog" }
+
+      it { is_expected.to eq("303b8a83c87d5c6d749926cf02620465a5dcd0f2") }
     end
   end
 
@@ -200,6 +255,22 @@ RSpec.describe Dependabot::Composer::UpdateChecker do
           end
         end
       end
+
+      context "when an odd version of PHP is specified" do
+        let(:manifest_fixture_name) { "odd_php_specified" }
+        let(:dependency_name) { "illuminate/support" }
+        let(:dependency_version) { "5.2.7" }
+        let(:requirements) do
+          [{
+            file: "composer.json",
+            requirement: "^5.2.0",
+            groups: ["runtime"],
+            source: nil
+          }]
+        end
+
+        it { is_expected.to be >= Gem::Version.new("5.2.45") }
+      end
     end
 
     context "with a dev dependency" do
@@ -229,7 +300,7 @@ RSpec.describe Dependabot::Composer::UpdateChecker do
 
       context "that is the dependency we're checking" do
         let(:dependency_name) { "path_dep/path_dep" }
-        let(:current_version) { "1.0.1" }
+        let(:dependency_version) { "1.0.1" }
         let(:requirements) do
           [{
             requirement: "1.0.*",
@@ -394,14 +465,26 @@ RSpec.describe Dependabot::Composer::UpdateChecker do
           source: nil
         }]
       end
+      let(:ignored_versions) { [">= 2.8.0"] }
 
-      it "is between 2.0.0 and 3.0.0" do
-        expect(latest_resolvable_version).to be < Gem::Version.new("3.0.0")
-        expect(latest_resolvable_version).to be > Gem::Version.new("2.0.0")
+      it "is the highest resolvable version" do
+        expect(latest_resolvable_version).to eq(Gem::Version.new("2.1.7"))
+      end
+
+      context "where the blocking dependency is a git dependency" do
+        let(:manifest_fixture_name) { "git_source_conflict_at_latest" }
+        let(:lockfile_fixture_name) { "git_source_conflict_at_latest" }
+
+        pending "is the highest resolvable version" do
+          # It would be nice if this worked, but currently Composer ignores
+          # resolvability requirements for git dependencies.
+          expect(latest_resolvable_version).to eq(Gem::Version.new("2.1.7"))
+        end
       end
     end
 
     context "with a version conflict in the current files" do
+      let(:files) { [composer_file, lockfile] }
       let(:manifest_fixture_name) { "version_conflict" }
       let(:dependency_name) { "monolog/monolog" }
       let(:dependency_version) { "2.1.5" }
@@ -415,9 +498,19 @@ RSpec.describe Dependabot::Composer::UpdateChecker do
       end
 
       it { is_expected.to be_nil }
+
+      context "and there is no lockfile" do
+        let(:files) { [composer_file] }
+
+        it "raises a resolvability error" do
+          expect { latest_resolvable_version }.
+            to raise_error(Dependabot::DependencyFileNotResolvable)
+        end
+      end
     end
 
     context "with an update that can't resolve" do
+      let(:files) { [composer_file, lockfile] }
       let(:manifest_fixture_name) { "version_conflict_on_update" }
       let(:lockfile_fixture_name) { "version_conflict_on_update" }
       let(:dependency_name) { "longman/telegram-bot" }
@@ -432,12 +525,40 @@ RSpec.describe Dependabot::Composer::UpdateChecker do
       end
 
       it { is_expected.to be_nil }
+
+      context "and there is no lockfile" do
+        let(:files) { [composer_file] }
+
+        it { is_expected.to be_nil }
+
+        context "and the conflict comes from a loose PHP version" do
+          let(:manifest_fixture_name) { "version_conflict_library" }
+          let(:files) { [composer_file] }
+
+          it { is_expected.to be_nil }
+        end
+      end
     end
 
     context "with a dependency with a git source" do
       let(:manifest_fixture_name) { "git_source" }
       let(:lockfile_fixture_name) { "git_source" }
-      it { is_expected.to be >= Gem::Version.new("1.22.1") }
+
+      let(:dependency_version) { "5267b03b1e4861c4657ede17a88f13ef479db482" }
+      let(:requirements) do
+        [{
+          requirement: "dev-example",
+          file: "composer.json",
+          groups: ["runtime"],
+          source: {
+            type: "git",
+            url: "https://github.com/dependabot/monolog.git",
+            branch: "example"
+          }
+        }]
+      end
+
+      it { is_expected.to be_nil }
 
       context "that is not the gem we're checking" do
         let(:dependency_name) { "symfony/polyfill-mbstring" }
@@ -452,6 +573,39 @@ RSpec.describe Dependabot::Composer::UpdateChecker do
         end
 
         it { is_expected.to be >= Gem::Version.new("1.3.0") }
+
+        context "with an alias" do
+          let(:manifest_fixture_name) { "git_source_alias" }
+          it { is_expected.to be >= Gem::Version.new("1.3.0") }
+        end
+
+        context "with a stability flag" do
+          let(:manifest_fixture_name) { "git_source_transitive" }
+          let(:lockfile_fixture_name) { "git_source_transitive" }
+          let(:requirements) do
+            [{
+              requirement: "1.*@dev",
+              file: "composer.json",
+              groups: ["runtime"],
+              source: {
+                type: "git",
+                url: "https://github.com/php-fig/log.git",
+                branch: "master",
+                ref: nil
+              }
+            }]
+          end
+
+          it { is_expected.to be_nil }
+        end
+
+        context "with a bad commit" do
+          let(:lockfile_fixture_name) { "git_source_bad_commit" }
+
+          # Alternatively, this could raise an error. Either behaviour would be
+          # fine - the below is just what we get with Composer at the moment.
+          it { is_expected.to be >= Gem::Version.new("1.3.0") }
+        end
 
         context "with a git URL" do
           let(:manifest_fixture_name) { "git_source_git_url" }
@@ -469,7 +623,7 @@ RSpec.describe Dependabot::Composer::UpdateChecker do
               to raise_error do |error|
                 expect(error).to be_a(Dependabot::GitDependenciesNotReachable)
                 expect(error.dependency_urls).
-                  to eq(["https://github.com/no-exist-sorry/monolog"])
+                  to eq(["https://github.com/no-exist-sorry/monolog.git"])
               end
           end
 
@@ -569,6 +723,33 @@ RSpec.describe Dependabot::Composer::UpdateChecker do
         ]
       end
       it { is_expected.to eq(Gem::Version.new("1.16.0")) }
+    end
+  end
+
+  describe "#latest_resolvable_version_with_no_unlock" do
+    subject(:latest_resolvable_version_with_no_unlock) do
+      checker.latest_resolvable_version_with_no_unlock
+    end
+
+    context "with a dependency with a git source" do
+      let(:manifest_fixture_name) { "git_source" }
+      let(:lockfile_fixture_name) { "git_source" }
+
+      let(:dependency_version) { "5267b03b1e4861c4657ede17a88f13ef479db482" }
+      let(:requirements) do
+        [{
+          requirement: "dev-example",
+          file: "composer.json",
+          groups: ["runtime"],
+          source: {
+            type: "git",
+            url: "https://github.com/dependabot/monolog.git",
+            branch: "example"
+          }
+        }]
+      end
+
+      it { is_expected.to be_nil }
     end
   end
 

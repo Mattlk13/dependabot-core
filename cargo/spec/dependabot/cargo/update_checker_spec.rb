@@ -22,11 +22,13 @@ RSpec.describe Dependabot::Cargo::UpdateChecker do
       dependency_files: dependency_files,
       credentials: credentials,
       ignored_versions: ignored_versions,
+      raise_on_ignored: raise_on_ignored,
       security_advisories: security_advisories
     )
   end
 
   let(:ignored_versions) { [] }
+  let(:raise_on_ignored) { false }
   let(:security_advisories) { [] }
   let(:credentials) do
     [{
@@ -201,6 +203,14 @@ RSpec.describe Dependabot::Cargo::UpdateChecker do
       it { is_expected.to eq(Gem::Version.new("0.1.39")) }
     end
 
+    context "when all versions are being ignored" do
+      let(:ignored_versions) { [">= 0"] }
+      let(:raise_on_ignored) { true }
+      it "raises an error" do
+        expect { subject }.to raise_error(Dependabot::AllVersionsIgnored)
+      end
+    end
+
     context "with a git dependency" do
       before do
         git_url = "https://github.com/BurntSushi/utf8-ranges.git"
@@ -237,7 +247,7 @@ RSpec.describe Dependabot::Cargo::UpdateChecker do
         }
       end
 
-      it { is_expected.to eq("b7c73859eb0507d378b9d0a4d9ae2a0c653267f7") }
+      it { is_expected.to eq("8d38a931b7e34f9da339c058cbbca6ded624ea58") }
 
       context "with a tag" do
         let(:manifest_fixture_name) { "git_dependency_with_tag" }
@@ -268,7 +278,7 @@ RSpec.describe Dependabot::Cargo::UpdateChecker do
           }
         end
 
-        it { is_expected.to eq("b7c73859eb0507d378b9d0a4d9ae2a0c653267f7") }
+        it { is_expected.to eq("8d38a931b7e34f9da339c058cbbca6ded624ea58") }
       end
     end
 
@@ -360,7 +370,7 @@ RSpec.describe Dependabot::Cargo::UpdateChecker do
           )
       end
 
-      it { is_expected.to eq("b7c73859eb0507d378b9d0a4d9ae2a0c653267f7") }
+      it { is_expected.to eq("8d38a931b7e34f9da339c058cbbca6ded624ea58") }
 
       context "with a tag" do
         let(:manifest_fixture_name) { "git_dependency_with_tag" }

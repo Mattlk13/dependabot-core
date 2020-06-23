@@ -1,11 +1,10 @@
 # frozen_string_literal: true
 
 require "dependabot/clients/azure"
+require "dependabot/clients/codecommit"
 require "dependabot/clients/github_with_retries"
 require "dependabot/clients/gitlab_with_retries"
 require "dependabot/pull_request_creator"
-
-# rubocop:disable Metrics/ClassLength
 module Dependabot
   class PullRequestCreator
     class PrNamePrefixer
@@ -279,6 +278,7 @@ module Dependabot
         when "github" then recent_github_commit_messages
         when "gitlab" then recent_gitlab_commit_messages
         when "azure" then recent_azure_commit_messages
+        when "codecommit" then recent_codecommit_commit_messages
         else raise "Unsupported provider: #{source.provider}"
         end
       end
@@ -314,9 +314,20 @@ module Dependabot
           azure_client_for_source.commits
 
         @recent_azure_commit_messages.
-          reject { |c| c.fetch("author").fetch("email") == dependabot_email }.
+          reject { |c| azure_commit_author_email(c) == dependabot_email }.
           reject { |c| c.fetch("comment")&.start_with?("Merge") }.
           map { |c| c.fetch("comment") }.
+          compact.
+          map(&:strip)
+      end
+
+      def recent_codecommit_commit_messages
+        @recent_codecommit_commit_messages ||=
+          codecommit_client_for_source.commits
+        @recent_codecommit_commit_messages.commits.
+          reject { |c| c.author.email == dependabot_email }.
+          reject { |c| c.message&.start_with?("Merge") }.
+          map(&:message).
           compact.
           map(&:strip)
       end
@@ -327,6 +338,7 @@ module Dependabot
           when "github" then last_github_dependabot_commit_message
           when "gitlab" then last_gitlab_dependabot_commit_message
           when "azure" then last_azure_dependabot_commit_message
+          when "codecommit" then last_codecommit_dependabot_commit_message
           else raise "Unsupported provider: #{source.provider}"
           end
       end
@@ -343,7 +355,7 @@ module Dependabot
       def recent_github_commits
         @recent_github_commits ||=
           github_client_for_source.commits(source.repo, per_page: 100)
-      rescue Octokit::Conflict
+      rescue Octokit::Conflict, Octokit::NotFound
         @recent_github_commits ||= []
       end
 
@@ -362,9 +374,23 @@ module Dependabot
           azure_client_for_source.commits
 
         @recent_azure_commit_messages.
-          find { |c| c.fetch("author").fetch("email") == dependabot_email }&.
+          find { |c| azure_commit_author_email(c) == dependabot_email }&.
           message&.
           strip
+      end
+
+      def last_codecommit_dependabot_commit_message
+        @recent_codecommit_commit_messages ||=
+          codecommit_client_for_source.commits(source.repo)
+
+        @recent_codecommit_commit_messages.commits.
+          find { |c| c.author.email == dependabot_email }&.
+          message&.
+          strip
+      end
+
+      def azure_commit_author_email(commit)
+        commit.fetch("author").fetch("email", "")
       end
 
       def github_client_for_source
@@ -391,10 +417,17 @@ module Dependabot
           )
       end
 
+      def codecommit_client_for_source
+        @codecommit_client_for_source ||=
+          Dependabot::Clients::CodeCommit.for_source(
+            source: source,
+            credentials: credentials
+          )
+      end
+
       def package_manager
         @package_manager ||= dependencies.first.package_manager
       end
     end
   end
 end
-# rubocop:enable Metrics/ClassLength

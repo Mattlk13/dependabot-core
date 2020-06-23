@@ -12,13 +12,14 @@ RSpec.describe Dependabot::Python::UpdateChecker::LatestVersionFinder do
       to_return(status: 200, body: pypi_response)
   end
   let(:pypi_url) { "https://pypi.python.org/simple/luigi/" }
-  let(:pypi_response) { fixture("pypi_simple_response.html") }
+  let(:pypi_response) { fixture("pypi", "pypi_simple_response.html") }
   let(:finder) do
     described_class.new(
       dependency: dependency,
       dependency_files: dependency_files,
       credentials: credentials,
       ignored_versions: ignored_versions,
+      raise_on_ignored: raise_on_ignored,
       security_advisories: security_advisories
     )
   end
@@ -31,6 +32,7 @@ RSpec.describe Dependabot::Python::UpdateChecker::LatestVersionFinder do
     }]
   end
   let(:ignored_versions) { [] }
+  let(:raise_on_ignored) { false }
   let(:security_advisories) { [] }
   let(:dependency_files) { [requirements_file] }
   let(:pipfile) do
@@ -106,29 +108,35 @@ RSpec.describe Dependabot::Python::UpdateChecker::LatestVersionFinder do
     end
 
     context "when the PyPI response includes zipped files" do
-      let(:pypi_response) { fixture("pypi_simple_response_zip.html") }
+      let(:pypi_response) { fixture("pypi", "pypi_simple_response_zip.html") }
       it { is_expected.to eq(Gem::Version.new("2.6.0")) }
     end
 
     context "when the pypi link responds with devpi-style" do
-      let(:pypi_response) { fixture("pypi_simple_response_devpi.html") }
+      let(:pypi_response) { fixture("pypi", "pypi_simple_response_devpi.html") }
       let(:dependency_version) { "0.9.0" }
 
       it { is_expected.to eq(Gem::Version.new("0.10.2")) }
     end
 
     context "when the latest versions have been yanked" do
-      let(:pypi_response) { fixture("pypi_simple_response_yanked.html") }
+      let(:pypi_response) do
+        fixture("pypi", "pypi_simple_response_yanked.html")
+      end
       it { is_expected.to eq(Gem::Version.new("2.4.0")) }
     end
 
     context "when the PyPI response includes multi-line links" do
-      let(:pypi_response) { fixture("pypi_simple_response_multiline.html") }
+      let(:pypi_response) do
+        fixture("pypi", "pypi_simple_response_multiline.html")
+      end
       it { is_expected.to eq(Gem::Version.new("2.6.0")) }
     end
 
     context "when the PyPI response includes data-requires-python entries" do
-      let(:pypi_response) { fixture("pypi_simple_response_django.html") }
+      let(:pypi_response) do
+        fixture("pypi", "pypi_simple_response_django.html")
+      end
       let(:pypi_url) { "https://pypi.python.org/simple/django/" }
       let(:dependency_name) { "django" }
       let(:dependency_version) { "1.2.4" }
@@ -154,16 +162,22 @@ RSpec.describe Dependabot::Python::UpdateChecker::LatestVersionFinder do
       let(:dependency_name) { "Luigi_ext" }
       let(:pypi_url) { "https://pypi.python.org/simple/luigi-ext/" }
       let(:pypi_response) do
-        fixture("pypi_simple_response_underscore.html")
+        fixture("pypi", "pypi_simple_response_underscore.html")
       end
       it { is_expected.to eq(Gem::Version.new("2.6.0")) }
 
       context "and contains spaces" do
         let(:pypi_response) do
-          fixture("pypi_simple_response_space.html")
+          fixture("pypi", "pypi_simple_response_space.html")
         end
         it { is_expected.to eq(Gem::Version.new("2.6.0")) }
       end
+    end
+
+    context "when the dependency name includes extras" do
+      let(:dependency_name) { "luigi[toml]" }
+
+      it { is_expected.to eq(Gem::Version.new("2.6.0")) }
     end
 
     context "when the user's current version is a pre-release" do
@@ -325,7 +339,7 @@ RSpec.describe Dependabot::Python::UpdateChecker::LatestVersionFinder do
         "https://pypi.weasyldev.com/weasyl/source/+simple/luigi/"
       end
       let(:extra_response) do
-        fixture("pypi_simple_response_extra.html")
+        fixture("pypi", "pypi_simple_response_extra.html")
       end
       before do
         stub_request(:get, extra_url).
@@ -478,12 +492,16 @@ RSpec.describe Dependabot::Python::UpdateChecker::LatestVersionFinder do
       end
 
       context "when the latest versions have been yanked" do
-        let(:pypi_response) { fixture("pypi_simple_response_yanked.html") }
+        let(:pypi_response) do
+          fixture("pypi", "pypi_simple_response_yanked.html")
+        end
         it { is_expected.to eq(Gem::Version.new("2.4.0")) }
       end
 
       context "when the PyPI response includes data-requires-python entries" do
-        let(:pypi_response) { fixture("pypi_simple_response_django.html") }
+        let(:pypi_response) do
+          fixture("pypi", "pypi_simple_response_django.html")
+        end
         let(:pypi_url) { "https://pypi.python.org/simple/django/" }
         let(:dependency_name) { "django" }
         let(:dependency_version) { "1.2.4" }
@@ -562,12 +580,30 @@ RSpec.describe Dependabot::Python::UpdateChecker::LatestVersionFinder do
     it { is_expected.to eq(Gem::Version.new("2.1.1")) }
 
     context "when the lowest version has been yanked" do
-      let(:pypi_response) { fixture("pypi_simple_response_yanked.html") }
+      let(:pypi_response) do
+        fixture("pypi", "pypi_simple_response_yanked.html")
+      end
       it { is_expected.to eq(Gem::Version.new("2.2.0")) }
     end
 
+    context "when the user has ignored all versions" do
+      let(:ignored_versions) { ["> 0"] }
+      it "returns nil" do
+        expect(subject).to be_nil
+      end
+
+      context "raise_on_ignored" do
+        let(:raise_on_ignored) { true }
+        it "raises an error" do
+          expect { subject }.to raise_error(Dependabot::AllVersionsIgnored)
+        end
+      end
+    end
+
     context "when the PyPI response includes data-requires-python entries" do
-      let(:pypi_response) { fixture("pypi_simple_response_django.html") }
+      let(:pypi_response) do
+        fixture("pypi", "pypi_simple_response_django.html")
+      end
       let(:pypi_url) { "https://pypi.python.org/simple/django/" }
       let(:dependency_name) { "django" }
       let(:dependency_version) { "1.2.4" }

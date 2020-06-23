@@ -13,13 +13,14 @@ RSpec.describe Dependabot::Python::UpdateChecker do
     stub_request(:get, pypi_url).to_return(status: 200, body: pypi_response)
   end
   let(:pypi_url) { "https://pypi.python.org/simple/luigi/" }
-  let(:pypi_response) { fixture("pypi_simple_response.html") }
+  let(:pypi_response) { fixture("pypi", "pypi_simple_response.html") }
   let(:checker) do
     described_class.new(
       dependency: dependency,
       dependency_files: dependency_files,
       credentials: credentials,
       ignored_versions: ignored_versions,
+      raise_on_ignored: raise_on_ignored,
       security_advisories: security_advisories
     )
   end
@@ -32,6 +33,7 @@ RSpec.describe Dependabot::Python::UpdateChecker do
     }]
   end
   let(:ignored_versions) { [] }
+  let(:raise_on_ignored) { false }
   let(:security_advisories) { [] }
   let(:dependency_files) { [requirements_file] }
   let(:pipfile) do
@@ -106,6 +108,7 @@ RSpec.describe Dependabot::Python::UpdateChecker do
           dependency_files: dependency_files,
           credentials: credentials,
           ignored_versions: ignored_versions,
+          raise_on_ignored: raise_on_ignored,
           security_advisories: security_advisories
         ).and_call_original
       expect(checker.latest_version).to eq(Gem::Version.new("2.6.0"))
@@ -133,7 +136,9 @@ RSpec.describe Dependabot::Python::UpdateChecker do
           )
         end
         let(:python_version_content) { "3.7.0\n" }
-        let(:pypi_response) { fixture("pypi_simple_response_django.html") }
+        let(:pypi_response) do
+          fixture("pypi", "pypi_simple_response_django.html")
+        end
         let(:pypi_url) { "https://pypi.python.org/simple/django/" }
         let(:dependency_name) { "django" }
         let(:dependency_version) { "1.2.4" }
@@ -200,7 +205,9 @@ RSpec.describe Dependabot::Python::UpdateChecker do
         let(:generated_fixture_name) { "pip_compile_requests.txt" }
         let(:requirements_fixture_name) { "urllib.txt" }
         let(:pypi_url) { "https://pypi.python.org/simple/urllib3/" }
-        let(:pypi_response) { fixture("pypi_simple_response_urllib3.html") }
+        let(:pypi_response) do
+          fixture("pypi", "pypi_simple_response_urllib3.html")
+        end
 
         let(:dependency_name) { "urllib3" }
         let(:dependency_version) { "1.22" }
@@ -323,7 +330,9 @@ RSpec.describe Dependabot::Python::UpdateChecker do
           }]
         end
         let(:pypi_url) { "https://pypi.python.org/simple/attrs/" }
-        let(:pypi_response) { fixture("pypi_simple_response_attrs.html") }
+        let(:pypi_response) do
+          fixture("pypi", "pypi_simple_response_attrs.html")
+        end
 
         let(:security_advisories) do
           [
@@ -366,6 +375,7 @@ RSpec.describe Dependabot::Python::UpdateChecker do
             dependency_files: dependency_files,
             credentials: credentials,
             ignored_versions: ignored_versions,
+            raise_on_ignored: raise_on_ignored,
             security_advisories: security_advisories
           ).and_call_original
         expect(checker.latest_resolvable_version_with_no_unlock).
@@ -489,14 +499,16 @@ RSpec.describe Dependabot::Python::UpdateChecker do
       end
 
       let(:pypi_url) { "https://pypi.python.org/simple/requests/" }
-      let(:pypi_response) { fixture("pypi_simple_response_requests.html") }
+      let(:pypi_response) do
+        fixture("pypi", "pypi_simple_response_requests.html")
+      end
 
       context "for a library" do
         before do
           stub_request(:get, "https://pypi.org/pypi/pendulum/json").
             to_return(
               status: 200,
-              body: fixture("pypi_response_pendulum.json")
+              body: fixture("pypi", "pypi_response_pendulum.json")
             )
         end
 

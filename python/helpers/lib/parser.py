@@ -2,18 +2,22 @@ from itertools import chain
 import glob
 import io
 import json
+import optparse
 import os.path
 import re
 
 import setuptools
 import pip._internal.req.req_file
-from pip._internal.download import PipSession
-from pip._internal.req.constructors import install_req_from_line
+from pip._internal.network.session import PipSession
+from pip._internal.models.format_control import FormatControl
+from pip._internal.req.constructors import (
+        install_req_from_line,
+        install_req_from_parsed_requirement,
+)
 
 def parse_requirements(directory):
     # Parse the requirements.txt
     requirement_packages = []
-
     requirement_files = glob.glob(os.path.join(directory, '*.txt')) \
                         + glob.glob(os.path.join(directory, '**', '*.txt'))
 
@@ -30,7 +34,8 @@ def parse_requirements(directory):
                 reqs_file,
                 session=PipSession()
             )
-            for install_req in requirements:
+            for parsed_req in requirements:
+                install_req = install_req_from_parsed_requirement(parsed_req)
                 if install_req.original_link:
                     continue
 
@@ -43,7 +48,8 @@ def parse_requirements(directory):
                     "version": version_from_install_req(install_req),
                     "markers": str(install_req.markers) or None,
                     "file": rel_path,
-                    "requirement": str(install_req.specifier) or None
+                    "requirement": str(install_req.specifier) or None,
+                    "extras": sorted(list(install_req.extras))
                 })
         except Exception as e:
             print(json.dumps({ "error": repr(e) }))
@@ -70,7 +76,8 @@ def parse_setup(directory):
                 "markers": str(install_req.markers) or None,
                 "file": "setup.py",
                 "requirement": str(install_req.specifier) or None,
-                "requirement_type": req_type
+                "requirement_type": req_type,
+                "extras": sorted(list(install_req.extras))
             })
 
         def setup(*args, **kwargs):

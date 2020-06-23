@@ -103,6 +103,13 @@ module Dependabot
         return if ignore_requirement?(requirement)
         return if workspace_package_names.include?(name)
 
+        # TODO: Handle aliased packages:
+        # https://github.com/dependabot/dependabot-core/pull/1115
+        #
+        # Ignore dependencies with an alias in the name (only supported by Yarn)
+        # Example: "my-fetch-factory@npm:fetch-factory"
+        return if aliased_package_name?(name)
+
         Dependency.new(
           name: name,
           version: version,
@@ -124,7 +131,8 @@ module Dependabot
         return true if local_path?(requirement)
         return true if non_git_url?(requirement)
 
-        # TODO: Handle aliased packages
+        # TODO: Handle aliased packages:
+        # https://github.com/dependabot/dependabot-core/pull/1115
         alias_package?(requirement)
       end
 
@@ -148,6 +156,10 @@ module Dependabot
         return false unless git_url?(requirement)
 
         !requirement.match(GIT_URL_REGEX).named_captures.fetch("semver").nil?
+      end
+
+      def aliased_package_name?(name)
+        name.include?("@npm:")
       end
 
       def workspace_package_names
@@ -204,7 +216,7 @@ module Dependabot
 
           version = t.name.match(Dependabot::GitCommitChecker::VERSION_REGEX).
                     named_captures.fetch("version")
-          next unless NpmAndYarn::Version.correct?(version)
+          next unless version_class.correct?(version)
 
           return version
         end
@@ -221,11 +233,10 @@ module Dependabot
           manifest_name: manifest_name
         )&.fetch("version", nil)
 
-        return unless lock_version
-        return if lock_version.include?("://")
-        return if lock_version.include?("file:")
-        return if lock_version.include?("link:")
-        return if lock_version.include?("#")
+        # This line is to guard against improperly formatted versions in a
+        # lockfile, such as additional characters. NPM/yarn fixes these when
+        # running an update, so we can safely ignore these versions.
+        return unless version_class.correct?(lock_version)
 
         lock_version
       end
@@ -242,7 +253,7 @@ module Dependabot
         return unless resolved_url
         return unless resolved_url.start_with?("http")
         return if CENTRAL_REGISTRIES.any? { |u| resolved_url.start_with?(u) }
-        return if resolved_url.include?("github")
+        return if resolved_url.match?(/(?<!pkg\.)github/)
 
         private_registry_source_for(resolved_url, name)
       end
@@ -282,8 +293,9 @@ module Dependabot
             # Gemfury format
             resolved_url.split("/~/").first
           elsif resolved_url.include?("/#{name}/-/#{name}")
-            # MyGet format
-            resolved_url.split("/#{name}/-/#{name}").first
+            # MyGet / Bintray format
+            resolved_url.split("/#{name}/-/#{name}").first.
+              gsub("dl.bintray.com//", "api.bintray.com/npm/")
           elsif resolved_url.include?("/#{name}/-/#{name.split('/').last}")
             # Sonatype Nexus / Artifactory JFrog format
             resolved_url.split("/#{name}/-/#{name.split('/').last}").first
@@ -323,6 +335,10 @@ module Dependabot
               *sub_packages
             ].compact
           end
+      end
+
+      def version_class
+        NpmAndYarn::Version
       end
     end
   end

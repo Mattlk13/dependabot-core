@@ -46,6 +46,10 @@ RSpec.describe Dependabot::GoModules::FileParser do
 
       its(:length) { is_expected.to eq(3) }
 
+      it "sets the package manager" do
+        expect(dependencies.first.package_manager).to eq("go_modules")
+      end
+
       describe "a dependency that uses go modules" do
         subject(:dependency) do
           dependencies.find { |d| d.name == "rsc.io/quote" }
@@ -143,6 +147,18 @@ RSpec.describe Dependabot::GoModules::FileParser do
       it "raises the correct error" do
         expect { parser.parse }.
           to raise_error(Dependabot::DependencyFileNotResolvable)
+      end
+    end
+
+    describe "a non-existing transitive dependency" do
+      # go.mod references repo with bad go.mod, a broken transitive dependency
+      let(:go_mod_fixture_name) { "parent_module.mod" }
+
+      it "raises the correct error" do
+        expect { parser.parse }.
+          to raise_error(Dependabot::DependencyFileNotResolvable) do |error|
+            expect(error.message).to include("hmarr/404")
+          end
       end
     end
 
